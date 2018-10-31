@@ -6,7 +6,23 @@ Assert which configuration should be put in place for Hazelcast to make the clus
 
 ## Server
 
+### 2.5
+
+
+| variable                                       | default | recommended | meaning |
+|---                                             |     ---:|         ---:|      ---|
+| `hazelcast.heartbeat.interval.seconds`         |         |           5 |         |
+|`hazelcast.max.no.heartbeat.seconds`            |         |          10 |         |
+|`hazelcast.merge.first.run.delay.seconds`       |         |           5 |         |
+|`hazelcast.merge.next.run.delay.seconds`        |         |           2 |         |
+|`hazelcast.master.confirmation.interval.seconds`|         |          10 |         |
+|`hazelcast.max.no.master.confirmation.seconds`  |         |          10 |         |
+|`hazelcast.member.list.publish.interval.seconds`|         |           5 |         |
+
+
 ## Client
+
+
 
 # Methodology for testing
 
@@ -15,8 +31,6 @@ Assert which configuration should be put in place for Hazelcast to make the clus
 Several networks are in place:
 
 ![network](static/network.png)
-
-this diagram 
 
 Broadly speaking, those are the rules enforced:
 * `127.0.0._` cannot communicate with `127.2.2._`
