@@ -34,10 +34,11 @@ Several networks are in place:
 
 Broadly speaking, those are the rules enforced:
 * `127.0.0._` cannot communicate with `127.2.2._`
-* `127.3._._` cannot communicate with `127.2._._
+* `127.3._._` cannot communicate with `127.2._._`
 * `127.2.1._` can communicate freely with `127.2.2._`
 * `127.3.1._` can communicate freely with `127.3.2._`
 * each packet going between `127.2.1._` and  `127.2.2._` is delayed by 5 ms, to simulate a remote site (a `ping` will then see a 10ms delay)
+* each packet going between `127.3.1._` and  `127.3.2._` is delayed also by 5 ms
 
 
 It will export a set of functions, and will print how to use them:
