@@ -10,19 +10,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.System.*;
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class Client25 {
 
-  public static void main(String[] args) throws InterruptedException {
+  public static void main(String[] args) {
 
     // https://docs.hazelcast.org/docs/2.5/manual/html-single/index.html#ConfigurationProperties
     setProperty("hazelcast.logging.type", "slf4j");
     setProperty("hazelcast.socket.client.bind.any", "false");
-//    setProperty("hazelcast.client.heartbeat.interval", "5000");
-//    setProperty("hazelcast.client.heartbeat.timeout", "1000");
-//    setProperty("hazelcast.client.invocation.timeout.seconds", "3");
-
 
     reconnect();
 
@@ -32,14 +27,19 @@ public class Client25 {
     long start = currentTimeMillis();
 
     Timer timer = new Timer("sampler", false);
-    int sampling = 1000;
+    int sampling = 5000;
     timer.scheduleAtFixedRate(new TimerTask() {
       @Override
       public void run() {
-        err.println((currentTimeMillis() - start) + "\t" + DONE.getAndSet(0));
+        int done = DONE.getAndSet(0);
+        err.println((currentTimeMillis() - start) + "\t" + done + "\t" + SIZE.get());
 
         int dead = DEAD.getAndSet(0);
-        if (10 < dead) {
+        if (0 == done) {
+          err.println(new Date() + ": client inactive, reconnecting");
+          reconnect();
+        }
+        if(10 < dead) {
           err.println(new Date() + ":  Failed " + dead + " times");
           reconnect();
         }
@@ -51,8 +51,9 @@ public class Client25 {
 
   static {
     // Building a 10ko string to simulate a ACS3 session.
+    Random r = new Random();
     char[] content = new char[10_000];
-    Arrays.fill(content, 'a');
+    Arrays.fill(content, (char) ('a' + r.nextInt(26)));
     BIG = new String(content);
   }
 
@@ -67,9 +68,12 @@ public class Client25 {
   private static void runForever() {
     while (true) {
       try {
-        Thread.sleep(5);
-        map.get().put(UUID.randomUUID(), BIG, 10, SECONDS);
+//        Thread.sleep(5);
+//        map.get().put(UUID.randomUUID(), BIG, 10, SECONDS);
+        Thread.sleep(20);
+        map.get().put(UUID.randomUUID(), BIG);
         DONE.incrementAndGet();
+        SIZE.set(map.get().size());
       } catch (Throwable t) {
         DEAD.incrementAndGet();
       }
@@ -82,7 +86,7 @@ public class Client25 {
       if (null != client) client.getLifecycleService().kill();
       client = HazelcastClient.newHazelcastClient(
           new ClientConfig()
-              .addAddress("127.2.1.1:5701", "127.2.1.2:5702")
+              .addAddress("127.1.2.1:5701", "127.1.2.2:5702")
               .setConnectionTimeout(2000));
       map.set(client.getMap("customers"));
       DEAD.set(0);
@@ -92,5 +96,6 @@ public class Client25 {
   }
 
   private static final AtomicInteger DONE = new AtomicInteger(0);
+  private static final AtomicInteger SIZE = new AtomicInteger(0);
 
 }

@@ -1,9 +1,7 @@
-import com.hazelcast.client.ClientConfig;
-import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.config.*;
-import com.hazelcast.core.*;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;
 import lombok.AllArgsConstructor;
-import lombok.val;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -19,7 +17,6 @@ import static java.lang.System.setProperty;
 import static java.util.stream.Collectors.toList;
 
 public class Server25 {
-
 
   @AllArgsConstructor
   public static final class Instance implements Comparable<Instance> {
@@ -51,9 +48,7 @@ public class Server25 {
   }
 
   public static void main(String[] args) throws Exception {
-    // https://docs.hazelcast.org/docs/2.5/manual/html-single/index.html#ConfigurationProperties
     setProperty("hazelcast.logging.type", "slf4j");
-
     Action.loop();
   }
 
@@ -95,13 +90,17 @@ public class Server25 {
                     .setNetworkConfig(new NetworkConfig()
                         .setInterfaces(new Interfaces().addInterface(inst.ip).setEnabled(true))
                         .setPort(inst.port)
-//                        .setPublicAddress(inst.ip)
                         .setJoin(new Join()
                             .setMulticastConfig(new MulticastConfig().setEnabled(false))
                             .setTcpIpConfig(tcp)
                         ))
+//                    .setPartitionGroupConfig(new PartitionGroupConfig()
+//                        .addMemberGroupConfig(new MemberGroupConfig().setInterfaces(Arrays.asList("127.1.2.1", "127.1.2.2")))
+//                        .addMemberGroupConfig(new MemberGroupConfig().setInterfaces(Arrays.asList("127.2.2.1", "127.2.2.2")))
+//                        .setGroupType(PartitionGroupConfig.MemberGroupType.CUSTOM)
+//                    )
                     .setProperty("hazelcast.socket.bind.any", "false")
-                    .setProperty("hazelcast.heartbeat.interval.seconds", "5")
+                    .setProperty("hazelcast.heartbeat.interval.seconds", "10")
                     .setProperty("hazelcast.max.no.heartbeat.seconds", "10")
                     .setProperty("hazelcast.merge.first.run.delay.seconds", "5")
                     .setProperty("hazelcast.merge.next.run.delay.seconds", "2")
@@ -162,8 +161,8 @@ public class Server25 {
     };
 
     private static final SortedSet<Instance> SERVERS = new TreeSet<>(Arrays.asList(
-        new Instance("1", "127.2.1.1", 5701),
-        new Instance("2", "127.2.1.2", 5702),
+        new Instance("1", "127.1.2.1", 5701),
+        new Instance("2", "127.1.2.2", 5702),
         new Instance("3", "127.2.2.1", 5703),
         new Instance("4", "127.2.2.2", 5704)
     ));
@@ -214,113 +213,5 @@ public class Server25 {
       }
     }
   }
-
-
-  /**
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-   *
-
-
-  // https://docs.hazelcast.org/docs/2.5/manual/html-single/index.html#ConfigurationProperties
-
-  List<HazelcastInstance> instances = new ArrayList<>();
-
-  val addresses = Arrays.asList(
-      new Address("127.2.1.1", 5701),
-      new Address("127.2.1.2", 5702),
-      new Address("127.2.2.1", 5703),
-      new Address("127.2.2.2", 5704)
-  );
-
-  val tcp = new TcpIpConfig().setEnabled(true);
-    addresses.stream().
-
-  map(Object::toString).
-
-  forEach(tcp::addMember);
-    tcp.setConnectionTimeoutSeconds(1);
-
-    for(
-  Address address :addresses)
-
-  {
-    err.println("Starting instance " + address);
-
-    NetworkConfig join = new NetworkConfig()
-        .setInterfaces(new Interfaces().addInterface(address.ip).setEnabled(true))
-        .setPort(address.port)
-        .setJoin(new Join()
-            .setMulticastConfig(new MulticastConfig().setEnabled(false))
-            .setTcpIpConfig(tcp)
-        );
-    join.setPublicAddress(address.ip);
-
-    Config config = new Config().setNetworkConfig(join);
-    config.setProperty("hazelcast.socket.bind.any", "false");
-    val h = Hazelcast.newHazelcastInstance(config);
-
-    h.getCluster().addMembershipListener(new MembershipListener() {
-
-      private final Address a = address;
-
-      @Override
-      public void memberAdded(MembershipEvent membershipEvent) {
-        err.println("from " + a + ":  " + membershipEvent);
-      }
-
-      @Override
-      public void memberRemoved(MembershipEvent membershipEvent) {
-        err.println("from " + a + ":" + membershipEvent);
-      }
-    });
-
-    instances.add(h);
-  }
-
-    try
-
-  {
-    Object o = new Object();
-    synchronized (o) {
-      o.wait();
-    }
-  } catch(
-  Throwable t)
-
-  {
-    t.printStackTrace();
-  } finally
-
-  {
-    instances.stream().parallel().forEach(HazelcastInstance::shutdown);
-  }
-
-
-}
-   */
 
 }

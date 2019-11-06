@@ -14,8 +14,19 @@
     <artifactId>3.10</artifactId>
 
     <properties>
-        <!--<hazelcast.version>3.9.4</hazelcast.version>-->
         <hazelcast.version>3.9.4</hazelcast.version>
     </properties>
 
+    <dependencies>
+        <dependency>
+            <groupId>com.hazelcast</groupId>
+            <artifactId>hazelcast</artifactId>
+            <version>${hazelcast.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.hazelcast</groupId>
+            <artifactId>hazelcast-client</artifactId>
+            <version>${hazelcast.version}</version>
+        </dependency>
+    </dependencies>
 </project>
