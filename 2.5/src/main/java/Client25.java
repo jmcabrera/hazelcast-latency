@@ -9,7 +9,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static java.lang.System.*;
+import static java.lang.System.out;
+import static java.lang.System.setProperty;
+import static java.util.concurrent.TimeUnit.MINUTES;
+
+import java.text.SimpleDateFormat;
 
 public class Client25 {
 
@@ -24,27 +28,26 @@ public class Client25 {
     int nb = 100;
     while (nb-- > 0) es.submit(Client25::runForever);
 
-    long start = currentTimeMillis();
-
     Timer timer = new Timer("sampler", false);
     int sampling = 5000;
     timer.scheduleAtFixedRate(new TimerTask() {
       @Override
       public void run() {
         int done = DONE.getAndSet(0);
-        err.println((currentTimeMillis() - start) + "\t" + done + "\t" + SIZE.get());
+        out.println(date() + "\t" + done + "\t" + SIZE.get());
 
-        int dead = DEAD.getAndSet(0);
-        if (0 == done) {
-          err.println(new Date() + ": client inactive, reconnecting");
-          reconnect();
-        }
+        int dead = 0 == done ? DEAD.incrementAndGet() : DEAD.getAndSet(0);
         if(10 < dead) {
-          err.println(new Date() + ":  Failed " + dead + " times");
+          out.println(date() + ":  Failed " + dead + " times");
+          DEAD.set(0);
           reconnect();
         }
       }
     }, sampling, sampling);
+  }
+
+  public static final String date() {
+    return new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS").format(new Date());
   }
 
   private static final String BIG;
@@ -63,15 +66,13 @@ public class Client25 {
 
   private static volatile HazelcastInstance client;
 
-  private static AtomicReference<IMap> map = new AtomicReference<>();
+  private static AtomicReference<IMap<UUID, String>> map = new AtomicReference<>();
 
   private static void runForever() {
     while (true) {
       try {
-//        Thread.sleep(5);
-//        map.get().put(UUID.randomUUID(), BIG, 10, SECONDS);
         Thread.sleep(20);
-        map.get().put(UUID.randomUUID(), BIG);
+        map.get().put(UUID.randomUUID(), BIG, 3, MINUTES);
         DONE.incrementAndGet();
         SIZE.set(map.get().size());
       } catch (Throwable t) {
@@ -82,7 +83,7 @@ public class Client25 {
 
   private synchronized static void reconnect() {
     try {
-      err.println("reconnecting");
+      out.println("reconnecting");
       if (null != client) client.getLifecycleService().kill();
       client = HazelcastClient.newHazelcastClient(
           new ClientConfig()

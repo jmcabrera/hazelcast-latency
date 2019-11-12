@@ -1,10 +1,35 @@
 #!/usr/bin/env bash
 
 function log {
-    echo $(date +"%x %X") $@
+    echo $(date +"%Y/%m/%d %X") $@
 }
 
 ### for Hazelcast 2
+
+function split {
+    log "splitting"
+    sudo iptables -t filter -I ISOLATION 1 -s 127.1.0.0/16 -d 127.2.0.0/16 -j DROP
+    sudo iptables -t filter -I ISOLATION 1 -s 127.2.0.0/16 -d 127.1.0.0/16 -j DROP
+    state2["intersite"]="shut down"
+    [[ "$1" =~ ^[1-9][0-9]*$ ]] && sleep $1 && unsplit
+}
+
+function unsplit {
+    log "unsplitting"
+    sudo iptables -t filter -D ISOLATION -s 127.1.0.0/16 -d 127.2.0.0/16 -j DROP
+    sudo iptables -t filter -D ISOLATION -s 127.2.0.0/16 -d 127.1.0.0/16 -j DROP
+    state2["intersite"]="opened"
+}
+
+function unreliable {
+    sa=${1:-"10"}
+    sb=${2:-"10"}
+    ua=${3:-$sa}
+    ub=${4:-$sb}
+    log "split $sa to $(($sa+$sb)) seconds then unsplit during $ua to $(($ua+$ub))"
+    log "^C to stop please"
+    bash -c 'while true; do split $(('$sa' + ($RANDOM % '$sb'))); sleep $(('$ua' + ($RANDOM % '$ub'))); done' | tee -a splitting.log
+}
 
 function status2 {
     for i in "${!state2[@]}"
@@ -33,26 +58,6 @@ function open2 {
     done
 }
 
-function split2 {
-    log "splitting"
-    sudo iptables -t filter -I ISOLATION 1 -s 127.1.2.0/24 -d 127.2.2.0/24 -j DROP
-    sudo iptables -t filter -I ISOLATION 1 -s 127.2.2.0/24 -d 127.1.2.0/24 -j DROP
-    state2["intersite"]="shut down"
-    [[ "$1" =~ ^[1-9][0-9]*$ ]] && sleep $1 && unsplit2
-}
-
-function unsplit2 {
-    log "unsplitting"
-    sudo iptables -t filter -D ISOLATION -s 127.1.2.0/24 -d 127.2.2.0/24 -j DROP
-    sudo iptables -t filter -D ISOLATION -s 127.2.2.0/24 -d 127.1.2.0/24 -j DROP
-    state2["intersite"]="opened"
-}
-
-function unreliable2 {
-    log "^C to stop please"
-    bash -c 'while true; do split2 $((10 + ($RANDOM % 10))); sleep $((10 + ($RANDOM % 10))); done'
-    unsplit2
-}
 
 ### for Hazelcast 3
 
@@ -83,27 +88,6 @@ function open3 {
     done
 }
 
-function split3 {
-    log "splitting"
-    sudo iptables -t filter -I ISOLATION 1 -s 127.1.3.0/24 -d 127.2.3.0/24 -j DROP
-    sudo iptables -t filter -I ISOLATION 1 -s 127.2.3.0/24 -d 127.1.3.0/24 -j DROP
-    state3["intersite"]="shut down"
-    [[ "$1" =~ ^[1-9][0-9]*$ ]] && sleep $1 && unsplit3
-}
-
-function unsplit3 {
-    log "unsplitting"
-    sudo iptables -t filter -D ISOLATION -s 127.1.3.0/24 -d 127.2.3.0/24 -j DROP
-    sudo iptables -t filter -D ISOLATION -s 127.2.3.0/24 -d 127.1.3.0/24 -j DROP
-    state3["intersite"]="opened"
-}
-
-function unreliable3 {
-    log "^C to stop please"
-    bash -c 'while true; do split3 $((1 + $RANDOM % 5)); sleep $((1 + $RANDOM % 5)); done'
-    unsplit3
-}
-
 function setup {
     unset ip2 ip3 state2 state3
     
@@ -130,7 +114,7 @@ function setup {
     sudo tc qdisc add dev lo root handle 1: htb
     sudo tc class add dev lo parent 1: classid 1:1 htb rate 2gbit # site 1 : flux cluster <-> cluster et client <-> cluster
     sudo tc class add dev lo parent 1: classid 1:2 htb rate 2gbit # site 2 : flux cluster <-> cluster
-    sudo tc class add dev lo parent 1: classid 1:3 htb rate 200mbit # site 2 : flux cluster <-> cluster
+    sudo tc class add dev lo parent 1: classid 1:3 htb rate 20mbit # site 2 : flux cluster <-> cluster
 
     # intra site 1
     sudo tc filter add dev lo protocol ip parent 1:0 prio 1 u32 match ip dst 127.1.0.0/16 match ip src 127.1.0.0/16 flowid 1:1 # flux site 1 <-> site 1
@@ -146,7 +130,7 @@ function setup {
     sudo tc filter add dev lo protocol ip parent 1:0 prio 1 u32 match ip dst 127.0.0.0/16 match ip src 127.2.0.0/16 flowid 1:3 # flux client -> site 2
     sudo tc filter add dev lo protocol ip parent 1:0 prio 1 u32 match ip dst 127.2.0.0/16 match ip src 127.0.0.0/16 flowid 1:3 # flux site 2 -> client
 
-    sudo tc qdisc add dev lo parent 1:3 handle 30: netem delay 5ms 1ms 5%  # Ajout d'un délai sur le flow 1:3 qui correspond à l'intersite.
+    sudo tc qdisc add dev lo parent 1:3 handle 30: netem delay 5ms 1ms 5% loss random 5% # Ajout d'un délai sur le flow 1:3 qui correspond à l'intersite.
 
     # ISOLATION will host failures.
     sudo iptables -t filter -N ISOLATION
@@ -157,6 +141,7 @@ function setup {
     sudo iptables -t filter -N MULTISITE
     sudo iptables -t filter -A INPUT  -s 127.0.0.0/8 -d 127.0.0.0/8 -j MULTISITE
     sudo iptables -t filter -A OUTPUT -s 127.0.0.0/8 -d 127.0.0.0/8 -j MULTISITE
+    sudo iptables -t filter -A MULTISITE -s 127.0.0.0/16 -d 127.0.0.0/16 -j RETURN # Let "normal" localhost traffic be.
     sudo iptables -t filter -A MULTISITE -s 127.0.0.0/16 -d 127.1.0.0/16 -j RETURN # Client can find site 1 (hzct 2 and 3)
     sudo iptables -t filter -A MULTISITE -s 127.1.0.0/16 -d 127.0.0.0/16 -j RETURN
     sudo iptables -t filter -A MULTISITE -s 127.1.2.0/24 -d 127.1.2.0/24 -j RETURN # Hzct 2 cluster can discuss freely on site 1
@@ -167,6 +152,7 @@ function setup {
     sudo iptables -t filter -A MULTISITE -s 127.2.3.0/24 -d 127.2.3.0/24 -j RETURN # ......................................... 2
     sudo iptables -t filter -A MULTISITE -s 127.1.3.0/24 -d 127.2.3.0/24 -j RETURN # ................................. site 1 -> site 2
     sudo iptables -t filter -A MULTISITE -s 127.2.3.0/24 -d 127.1.3.0/24 -j RETURN # ................................. site 2 -> site 1
+
 
     sudo iptables -t filter -A MULTISITE -j DROP # baseline
 
@@ -231,33 +217,27 @@ function compile {
 }
 
 function servers2 {
-    java -cp 2.5/target/2.5-1.0-SNAPSHOT-jar-with-dependencies.jar Server25
+    nice -n 20 java -cp 2.5/target/2.5-1.0-SNAPSHOT-jar-with-dependencies.jar Server25 | tee server25-$(date +%Y%m%d-%H%M%S).log
 }
 
 function client2 {
-    java -cp 2.5/target/2.5-1.0-SNAPSHOT-jar-with-dependencies.jar Client25
+    nice -n 20 java -cp 2.5/target/2.5-1.0-SNAPSHOT-jar-with-dependencies.jar Client25 | tee client25-$(date +%Y%m%d-%H%M%S).log
 }
 
 function servers3 {
-    java -cp 3.10/target/3.10-1.0-SNAPSHOT-jar-with-dependencies.jar Server310
+    nice -n 20 java -cp 3.10/target/3.10-1.0-SNAPSHOT-jar-with-dependencies.jar Server310 | tee server310-$(date +%Y%m%d-%H%M%S).log
 }
 
 function client3 {
-    java -cp 3.10/target/3.10-1.0-SNAPSHOT-jar-with-dependencies.jar Client310
+    nice -n 20 java -cp 3.10/target/3.10-1.0-SNAPSHOT-jar-with-dependencies.jar Client310 | tee client310-$(date +%Y%m%d-%H%M%S).log
 }
 
-export -f status2 shut2 open2 split2 unsplit2 unreliable2 servers2 client2
-export -f status3 shut3 open3 split3 unsplit3 unreliable3 servers3 client3
-export -f setup tear log compile monitor reset
+export -f status2 shut2 open2 servers2 client2
+export -f status3 shut3 open3 servers3 client3
+export -f setup tear log compile monitor reset split unsplit unreliable
 
 echo "#####################################################################"
 echo "usage: ___>>> THIS SCRIPT MUST BE SOURCED, NOT EXECUTED <<<___"
-echo "On loading, this script will do 3 things:"
-echo " 1. setup iptables and tc to create two 'sites' with a 5ms delay between them"
-echo "    On the filter table of iptables, we create a chain ISOLATION and MULTISITE"
-echo "    These tables are empty, the below commands will be implemented there."
-echo "    One more chain named MONITOR is created so that you can witness which"
-echo "    traffic is actually happening. Se for yourself with 'monitor'"
 echo ""
 echo "command list:"
 echo ""
@@ -267,28 +247,31 @@ echo ""
 echo "setup   : prepare a set of rules to make shut and open"
 echo "          to work as expected"
 echo ""
+echo "split t : nodes 3 and 4 are unreachable for time t."
+echo "          if t not given, split until 'unsplit' is called"
+echo ""
+echo "unsplit : undoes a split (but does not undo a shut)"
+echo ""
+echo "unreliable a b c d: start a loop where intersite is split during a and (a+b)"
+echo "                    seconds they unsplit during c and (c+d) seconds"
+echo "                    a,b defaults to 10; c defaults to a; d defaults to c"
+echo ""
 echo "monitor : Shows a list of traffic between every ips defined by this tool"
 echo "          see servers2 and servers3 for a list."
 echo ""
-echo "servers2: starts 4 servers on Hazelcast 2.5 with ips 127.2.[1-2].[1-2]"
-echo "          127.2.1._ is site 1, 127.2.2._ is site 2"
-echo "          127.2.1._ is site 1, 127.2.2._ is site 2"
-echo ""
-echo "servers3, client3, shut3, open3, split3, unsplit3 act on the 127.3.x.x nodes"
-echo "servers2, client2, shut2, open2, split2, unsplit2 act on the 127.2.x.x nodes"
+echo "servers2: starts 4 servers on Hazelcast 2.5 with ips 127.[1-2].2.[1-2]"
+echo "          127.1._._ is site 1, 127.2._._ is site 2"
 echo ""
 echo "shut2 x : (x in 1..4) isolates node x"
 echo ""
 echo "open2 x : (x in 1..4) make nodes x reachable again, after they have"
 echo "          sgut with the shut operation"
 echo ""
-echo "split2 t: nodes 3 and 4 are unreachable for time t."
-echo "          if t not given, split until 'unsplit' is called"
-echo ""
-echo "unsplit2: undoes a split (but does not undo a shut)"
-echo ""
 echo "status2 : gives state of nodes and intersite"
 echo ""
 echo "client2 : gives state of nodes and intersite"
 echo ""
-echo "shut3, open3, split3, unsplit3 to act on the 127.3.x.x nodes"
+echo "shut3, open3, servers3, client3 to act on the 127._.3._ nodes"
+echo ""
+
+sudo iptables -nvL MONITOR 1>/dev/null 2>&1 || setup
